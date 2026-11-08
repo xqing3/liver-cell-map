@@ -1,0 +1,905 @@
+<meta charset="utf-8">
+<title>Liver Cell Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: tool bar over a large canvas map, a stacked column of linked views beside it, ranked results below. */
+:root {
+  --bg: #eef2f3;
+  --surface: #ffffff;
+  --ink: #16212a;
+  --muted: #5b6a75;
+  --line: #d3dce1;
+  --soft: #e4eaee;
+  --sel: #1f63d6;
+  --res: #0b8f6c;
+  --ramp0: #c3ccd4; --ramp1: #e3a63b; --ramp2: #cf472c; --ramp3: #7f1a3b;
+  --div-neg: #2f6db3; --div-pos: #c2361f;
+  --mouse: #8364b8; --human: #22948a;
+  --healthy: #5f87b0; --disease: #cf472c;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1418; --surface: #161f25; --ink: #e2e9ee; --muted: #93a3ae; --line: #2a3640; --soft: #1e2930;
+    --sel: #62a8ff; --res: #3bd3a5;
+    --ramp0: #34414b; --ramp1: #c99130; --ramp2: #f0643e; --ramp3: #ffb4a6;
+    --div-neg: #5b9be0; --div-pos: #f0643e;
+    --mouse: #a88be0; --human: #3cc2b4; --healthy: #7fa8d2; --disease: #f0643e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1418; --surface: #161f25; --ink: #e2e9ee; --muted: #93a3ae; --line: #2a3640; --soft: #1e2930;
+  --sel: #62a8ff; --res: #3bd3a5;
+  --ramp0: #34414b; --ramp1: #c99130; --ramp2: #f0643e; --ramp3: #ffb4a6;
+  --div-neg: #5b9be0; --div-pos: #f0643e;
+  --mouse: #a88be0; --human: #3cc2b4; --healthy: #7fa8d2; --disease: #f0643e;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 32px;
+}
+.app { max-width: 1440px; margin: 0 auto; display: grid; gap: 14px; }
+h1, h2 { font-family: var(--font-display); font-weight: 600; margin: 0; text-wrap: balance; }
+h1 { font-size: 1.6rem; letter-spacing: 0.01em; }
+h2 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.mono, .num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+header.top p { margin: 0; color: var(--muted); max-width: 70ch; }
+.badge {
+  font-family: var(--font-data); font-size: 0.72rem; padding: 2px 8px; border: 1px dashed var(--muted);
+  border-radius: 999px; color: var(--muted); white-space: nowrap;
+}
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.datasrc { display: inline-flex; gap: 10px; font-size: 0.8rem; }
+.datasrc a { color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
+.datasrc a[aria-current="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.ctl { display: flex; align-items: center; gap: 8px; }
+.ctl > span { font-family: var(--font-display); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.seg button {
+  font: inherit; font-size: 0.85rem; padding: 5px 10px; border: 0; background: transparent; color: var(--ink); cursor: pointer;
+  border-right: 1px solid var(--line);
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg.small button { font-size: 0.75rem; padding: 3px 8px; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
+.btn {
+  font: inherit; font-size: 0.85rem; padding: 6px 12px; border-radius: var(--r); cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.btn.primary { background: var(--sel); border-color: var(--sel); color: var(--surface); font-weight: 600; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
+.map-wrap {
+  position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); height: min(84vh, 760px); min-height: 380px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+}
+#map { position: absolute; inset: 0; width: 100%; height: 100%; }
+#overlays { position: absolute; inset: 0; }
+#overlays > div { position: absolute; top: 0; bottom: 0; touch-action: none; }
+#overlays.lasso > div { cursor: crosshair; }
+.legend {
+  position: absolute; left: 10px; bottom: 10px; background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; font-size: 0.75rem; display: grid; gap: 6px;
+  pointer-events: none; max-width: calc(100% - 20px);
+}
+.legend .row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
+.ramp { width: 140px; height: 8px; border-radius: 4px; }
+.level-chip {
+  position: absolute; right: 10px; top: 10px; font-family: var(--font-data); font-size: 0.72rem; color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 88%, transparent); padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
+  pointer-events: none;
+}
+#tip {
+  position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 0.76rem; padding: 6px 8px;
+  border-radius: 4px; white-space: nowrap; transform: translate(12px, -50%); z-index: 2; line-height: 1.35;
+}
+.side { display: grid; gap: 14px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 10px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.big { font-family: var(--font-display); font-size: 1.5rem; font-weight: 600; line-height: 1; }
+.big small { font-family: var(--font-body); font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.status { font-size: 0.78rem; color: var(--muted); margin: 0; }
+.comp { display: grid; gap: 6px; }
+.comp-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 0.75rem; }
+.comp-row > span { color: var(--muted); }
+.stack { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--soft); }
+.stack > i { display: block; height: 100%; }
+.comp-note { font-size: 0.75rem; color: var(--muted); grid-column: 2; }
+.filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.8rem; }
+.filter input[type="range"] { width: 120px; accent-color: var(--sel); }
+svg text { fill: var(--muted); font-family: var(--font-data); font-size: 10px; }
+svg .axis path, svg .axis line { stroke: var(--line); }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.74rem; color: var(--muted); }
+.key { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: 3px; margin-right: 4px; }
+.pairs { display: grid; gap: 5px; font-size: 0.76rem; }
+.pair { display: grid; grid-template-columns: 112px minmax(0, 1fr) 44px; gap: 8px; align-items: center; }
+.pair .bars { display: grid; gap: 2px; }
+.pair .bars i { display: block; height: 5px; border-radius: 2px; }
+.pair .lr { font-family: var(--font-data); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 10px; min-width: 0; }
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.8rem; min-width: 640px; }
+th { text-align: left; font-family: var(--font-display); font-weight: 500; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 4px 8px; border-bottom: 1px solid var(--soft); font-variant-numeric: tabular-nums; }
+td.num { font-family: var(--font-data); }
+.minibar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: 1px; margin-right: 6px; }
+.stands-in { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
+.stands-in ul { margin: 0; padding-left: 1.1em; display: grid; gap: 2px; max-width: 90ch; }
+.stands-in b { color: var(--ink); font-weight: 500; }
+@media (max-width: 1000px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .map-wrap { position: relative; top: 0; height: 460px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1>Liver Cell Map</h1>
+    <span class="badge" id="badge">loading…</span>
+    <nav class="datasrc" aria-label="Data source"><a href="#" id="src-full">Real, all cells</a><a href="#sample" id="src-sample">Real, 5,000 sample</a><a href="#synthetic" id="src-fake">Synthetic</a></nav>
+  </header>
+
+  <div class="toolbar" role="toolbar" aria-label="Map controls">
+    <div class="ctl"><span>Color</span>
+      <div class="seg" id="seg-color">
+        <button type="button" data-v="score" aria-pressed="true">Disease score</button>
+        <button type="button" data-v="type" aria-pressed="false">Cell type</button>
+        <button type="button" data-v="species" aria-pressed="false">Species</button>
+        <button type="button" data-v="condition" aria-pressed="false">Condition</button>
+      </div>
+    </div>
+    <div class="ctl"><span>Species</span>
+      <div class="seg" id="seg-layout">
+        <button type="button" data-v="merged" aria-pressed="true">Merged</button>
+        <button type="button" data-v="side" aria-pressed="false">Side by side</button>
+      </div>
+    </div>
+    <div class="ctl"><span>Level</span>
+      <div class="seg" id="seg-level">
+        <button type="button" data-v="clusters" aria-pressed="false">Clusters</button>
+        <button type="button" data-v="cells" aria-pressed="true">Cells</button>
+      </div>
+    </div>
+    <div class="ctl"><span>Tool</span>
+      <div class="seg" id="seg-tool">
+        <button type="button" data-v="pan" aria-pressed="false">Pan &amp; zoom</button>
+        <button type="button" data-v="lasso" aria-pressed="true">Lasso</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <section class="map-wrap" id="map-wrap" aria-label="Cell map">
+      <canvas id="map"></canvas>
+      <div id="overlays" class="lasso"></div>
+      <div class="level-chip" id="level-chip">cells · zoom 1.0×</div>
+      <div class="legend" id="legend"></div>
+      <div id="tip" hidden></div>
+    </section>
+
+    <aside class="side">
+      <section class="panel" aria-label="Selection">
+        <div class="panel-head">
+          <h2>Selection</h2>
+          <div class="actions">
+            <button type="button" class="btn primary" id="btn-search">Find similar</button>
+            <button type="button" class="btn" id="btn-refine">Add found to selection</button>
+            <button type="button" class="btn" id="btn-clear">Clear</button>
+          </div>
+        </div>
+        <div class="big" id="sel-count">0 <small>cells selected</small></div>
+        <div class="comp" id="comp"></div>
+        <div class="filter">
+          <label for="score-min">Or select by score ≥ <b class="num" id="score-min-v">0.60</b></label>
+          <input type="range" id="score-min" min="0" max="1" step="0.05" value="0.6">
+          <button type="button" class="btn" id="btn-score">Select</button>
+        </div>
+        <p class="status" id="status"></p>
+      </section>
+
+      <section class="panel" aria-label="Disease score distribution">
+        <div class="panel-head"><h2>Disease score</h2></div>
+        <svg id="hist" width="100%" height="150" role="img" aria-label="Histogram of disease scores"></svg>
+        <div class="chart-legend">
+          <span><span class="sw" style="background:var(--ramp0);border-radius:2px"></span>All cells</span>
+          <span><span class="key" style="border-color:var(--sel)"></span>Selected</span>
+          <span><span class="key" style="border-color:var(--res);border-top-style:dashed"></span>Found</span>
+        </div>
+        <p class="status" id="hist-note"></p>
+      </section>
+
+      <section class="panel" aria-label="Cell-to-cell signaling">
+        <div class="panel-head">
+          <h2>Signaling</h2>
+          <div class="seg small" id="seg-sig">
+            <button type="button" data-v="healthy" aria-pressed="false">Healthy</button>
+            <button type="button" data-v="disease" aria-pressed="true">Disease</button>
+            <button type="button" data-v="change" aria-pressed="false">Change</button>
+          </div>
+        </div>
+        <svg id="heat" width="100%" height="250" role="img" aria-label="Sender by receiver signaling heatmap"></svg>
+        <p class="status">Rows send, columns receive. Click a square to see its signal pairs.</p>
+        <div class="pairs" id="pairs"></div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="results" aria-label="Found cells">
+    <div class="panel-head">
+      <h2>Found cells, ranked by similarity</h2>
+      <span class="status" id="res-note"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Rank</th><th>Cell</th><th>Cell type</th><th>Species</th><th>Condition</th><th>Donor</th><th>Disease score</th><th>Similarity</th></tr></thead>
+        <tbody id="res-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="stands-in">
+    <h2>What this prototype stands in for</h2>
+    <ul>
+      <li id="li-cells"><b>Fake cells</b> take the place of the merged mouse NASH, human cirrhosis and Liver Cell Atlas data (about 612,000 cells).</li>
+      <li><b>Disease score</b> stands in for each cell's MELD likelihood of coming from a diseased liver.</li>
+      <li><b>Find similar</b> runs a random walk with restart in the browser. The final tool sends the selection to a FastAPI <span class="mono">/search</span> endpoint.</li>
+      <li><b>Canvas drawing</b> handles up to about 100,000 cells. The final map uses WebGL and loads cells on demand when zoomed in.</li>
+      <li id="li-sig"><b>Signaling</b> reads a precomputed table, as CellPhoneDB output per cell type and condition will be.</li>
+    </ul>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+(async function () {
+  // Data source by URL hash: none = all real cells, #sample (or #real) = 5,000 real cells, #synthetic (or #fake) = fake cells.
+  const SRC = { "#sample": "sample", "#real": "sample", "#synthetic": "fake", "#fake": "fake" }[location.hash] || "full";
+  addEventListener("hashchange", () => location.reload());
+  document.getElementById("src-" + SRC).setAttribute("aria-current", "true");
+  const D = await (await fetch({ full: "data_full.json", sample: "data_real.json", fake: "data.json" }[SRC])).json();
+  const C = D.cells, N = C.x.length, CL = D.clusters;
+  if (D.donors) C.donor = C.donor.map(k => D.donors[k]);
+  let indptr, indices;
+  if (D.graph.format === "upper-csr-u32-base64") {
+    // Large graphs ship as the upper triangle, binary in base64 text; rebuild the symmetric adjacency here.
+    const b64 = atob((await (await fetch(D.graph.file)).text()).trim());
+    const bytes = new Uint8Array(b64.length);
+    for (let k = 0; k < b64.length; k++) bytes[k] = b64.charCodeAt(k);
+    const buf = bytes.buffer;
+    const up = new Uint32Array(buf, 0, N + 1), col = new Uint32Array(buf, 4 * (N + 1));
+    const cnt = new Int32Array(N + 1);
+    for (let i = 0; i < N; i++) for (let k = up[i]; k < up[i + 1]; k++) { cnt[i + 1]++; cnt[col[k] + 1]++; }
+    for (let i = 0; i < N; i++) cnt[i + 1] += cnt[i];
+    indptr = Int32Array.from(cnt); indices = new Int32Array(cnt[N]);
+    const fill = Int32Array.from(cnt.subarray(0, N));
+    for (let i = 0; i < N; i++) for (let k = up[i]; k < up[i + 1]; k++) { const j = col[k]; indices[fill[i]++] = j; indices[fill[j]++] = i; }
+  } else {
+    indptr = Int32Array.from(D.graph.indptr); indices = Int32Array.from(D.graph.indices);
+  }
+  const deg = new Float64Array(N);
+  for (let i = 0; i < N; i++) deg[i] = indptr[i + 1] - indptr[i];
+  const ci = name => CL.indexOf(name);
+  const SHORT_KNOWN = { "B cell": "B", "Cholangiocyte": "Chol", "Disease macrophage": "DisMac", "Endothelial": "Endo",
+                  "Hepatocyte": "Hep", "Kupffer cell": "Kupf", "Stellate": "Stel", "T cell": "T", "Stellate/Fibroblast": "Stel",
+                  "Macrophage": "Mac", "Kupffer/Macrophage": "Kupf/Mac", "Granulocyte": "Gran", "Monocyte": "Mono", "T/NK cell": "T/NK", "B/Plasma cell": "B/Pl", "Dendritic cell": "DC",
+                  "Neutrophil": "Neut", "Other": "Other" };
+  const CAT_KNOWN = { "Hepatocyte": "#4e79a7", "Cholangiocyte": "#76b7b2", "Endothelial": "#59a14f", "Stellate": "#edc948",
+                "Stellate/Fibroblast": "#edc948", "Kupffer cell": "#f28e2b", "Disease macrophage": "#e15759", "Macrophage": "#e15759", "Kupffer/Macrophage": "#e15759", "Granulocyte": "#d37295",
+                "Monocyte": "#ff9da7", "T cell": "#b07aa1", "T/NK cell": "#b07aa1", "B cell": "#9c755f", "B/Plasma cell": "#9c755f",
+                "Dendritic cell": "#86bcb6", "Neutrophil": "#d37295", "Other": "#a0a4a8" };
+  const SHORT = Object.fromEntries(CL.map(c => [c, SHORT_KNOWN[c] || c.slice(0, 5)]));
+  const CAT = Object.fromEntries(CL.map((c, i) => [c, CAT_KNOWN[c] || d3.schemeTableau10[i % 10]]));
+  const HAS_SCORE = C.score.some(v => v !== null);
+  const pick = (...names) => names.map(ci).find(i => i >= 0) ?? 0;
+  const DEMO = pick("Disease macrophage", "Kupffer/Macrophage", "Macrophage", "Kupffer cell");
+  const STEL = pick("Stellate", "Stellate/Fibroblast", "Endothelial");
+  const M = D.meta || {};
+  const nEdges = indices.length / 2;
+  document.getElementById("badge").textContent = M.synthetic === false
+    ? `real data · ${N === (M.full_n_cells || N) ? "all " + N.toLocaleString() : N.toLocaleString() + " of " + M.full_n_cells.toLocaleString()} cells · ${nEdges.toLocaleString()} edges${HAS_SCORE ? "" : " · disease score not computed yet"}`
+    : `synthetic data · ${N.toLocaleString()} fake cells`;
+  if (M.synthetic === false) {
+    document.getElementById("li-cells").innerHTML = `<b>Real cells</b>: ${N.toLocaleString()} cells from mouse NASH (Xiong 2019) and human cirrhosis (Ramachandran 2019), merged with Harmony, linked to their 15 most similar cells. The Liver Cell Atlas (about 475,000 cells) is not merged yet.`;
+    document.getElementById("li-sig").innerHTML = `<b>Signaling</b> is a placeholder (mean ligand × mean receptor expression per cell type), to be replaced by CellChat and CellPhoneDB output.`;
+  }
+  const SPECIES = ["Mouse", "Human"], COND = ["Healthy", "Disease"];
+
+  const S = {
+    colorBy: HAS_SCORE ? "score" : "type", layout: "merged", tool: "lasso", t: d3.zoomIdentity,
+    selected: new Set(), results: [], sim: null, rank: new Map(), sigMode: "disease",
+    sigPair: [DEMO, STEL], lasso: null, topK: 200, searchMs: null,
+  };
+
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  let T = {};
+  function readTheme() {
+    for (const k of ["bg","surface","ink","muted","line","soft","sel","res","ramp0","ramp1","ramp2","ramp3","div-neg","div-pos","mouse","human","healthy","disease"]) T[k] = css("--" + k);
+    T.ramp = d3.interpolateRgbBasis([T.ramp0, T.ramp1, T.ramp2, T.ramp3]);
+    T.div = d3.scaleLinear().domain([-1, 0, 1]).range([T["div-neg"], T.soft, T["div-pos"]]).interpolate(d3.interpolateRgb).clamp(true);
+  }
+
+  function cellColor(i) {
+    switch (S.colorBy) {
+      case "score": return C.score[i] === null ? T.muted : T.ramp(C.score[i]);
+      case "type": return CAT[CL[C.cluster[i]]];
+      case "species": return C.species[i] ? T.human : T.mouse;
+      default: return C.condition[i] ? T.disease : T.healthy;
+    }
+  }
+
+  const fmt = v => (v === null || isNaN(v) ? "–" : v.toFixed(2));
+
+  // ---------- geometry ----------
+  const wrap = document.getElementById("map-wrap"), canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+  const overlaysEl = document.getElementById("overlays");
+  const xExt = d3.extent(C.x), yExt = d3.extent(C.y);
+  let W = 0, H = 0, panels = [];
+
+  function clusterStats(sp) {
+    const st = CL.map(() => ({ n: 0, x: 0, y: 0, s: 0, dis: 0, hum: 0 }));
+    for (let i = 0; i < N; i++) {
+      if (sp !== null && C.species[i] !== sp) continue;
+      const o = st[C.cluster[i]]; o.n++; o.x += C.x[i]; o.y += C.y[i]; o.s += C.score[i] ?? NaN; o.dis += C.condition[i]; o.hum += C.species[i];
+    }
+    // Anchor each bubble on the densest patch of its cells, not their mean: a cell type that forms
+    // separate mouse and human islands would otherwise land in the empty space between them.
+    const G = 40, gx = v => Math.min(G - 1, Math.floor((v - xExt[0]) / (xExt[1] - xExt[0] + 1e-9) * G)),
+      gy = v => Math.min(G - 1, Math.floor((v - yExt[0]) / (yExt[1] - yExt[0] + 1e-9) * G));
+    const grid = CL.map(() => new Uint32Array(G * G));
+    for (let i = 0; i < N; i++) if (sp === null || C.species[i] === sp) grid[C.cluster[i]][gx(C.x[i]) * G + gy(C.y[i])]++;
+    const anchor = grid.map(g => {
+      let best = -1, bi = 0;
+      for (let a = 0; a < G; a++) for (let b = 0; b < G; b++) {
+        let s = 0;
+        for (let da = -1; da <= 1; da++) for (let db = -1; db <= 1; db++) {
+          const u = a + da, v = b + db; if (u >= 0 && u < G && v >= 0 && v < G) s += g[u * G + v];
+        }
+        if (s > best) { best = s; bi = a * G + b; }
+      }
+      return [Math.floor(bi / G), bi % G];
+    });
+    const ax = CL.map(() => [0, 0, 0]);
+    for (let i = 0; i < N; i++) {
+      if (sp !== null && C.species[i] !== sp) continue;
+      const k = C.cluster[i], [a, b] = anchor[k];
+      if (Math.abs(gx(C.x[i]) - a) <= 1 && Math.abs(gy(C.y[i]) - b) <= 1) { ax[k][0] += C.x[i]; ax[k][1] += C.y[i]; ax[k][2]++; }
+    }
+    return st.map((o, k) => ({ k, n: o.n, x: ax[k][2] ? ax[k][0] / ax[k][2] : o.x / o.n, y: ax[k][2] ? ax[k][1] / ax[k][2] : o.y / o.n,
+      score: o.s / o.n, dis: o.dis / o.n, hum: o.hum / o.n }));
+  }
+  const statsCache = { null: clusterStats(null), 0: clusterStats(0), 1: clusterStats(1) };
+  const maxLink = d3.max(D.clusterLinks, l => l.edges);
+
+  function buildPanels() {
+    const defs = S.layout === "merged" ? [{ sp: null, x0: 0, w: W }] : [{ sp: 0, x0: 0, w: W / 2 }, { sp: 1, x0: W / 2, w: W / 2 }];
+    panels = defs.map(p => {
+      const pad = 28, dx = xExt[1] - xExt[0], dy = yExt[1] - yExt[0];
+      const k = Math.min((p.w - 2 * pad) / dx, (H - 2 * pad - 20) / dy);
+      const ox = (p.w - k * dx) / 2, oy = (H - k * dy) / 2 + 8;
+      const sx = v => ox + (v - xExt[0]) * k, sy = v => oy + (yExt[1] - v) * k;
+      const bx = new Float32Array(N), by = new Float32Array(N), ids = [];
+      for (let i = 0; i < N; i++) { bx[i] = sx(C.x[i]); by[i] = sy(C.y[i]); if (p.sp === null || C.species[i] === p.sp) ids.push(i); }
+      const qt = d3.quadtree().x(i => bx[i]).y(i => by[i]).addAll(ids);
+      const stats = statsCache[p.sp].filter(o => o.n > 0).map(o => ({ ...o, bx: sx(o.x), by: sy(o.y) }));
+      return { ...p, sx, sy, bx, by, ids, qt, stats, unit: Math.min(p.w, H) };
+    });
+    buildOverlays();
+  }
+
+  // ---------- zoom + pointer overlays (one per panel, shared transform) ----------
+  let zooms = [];
+  function buildOverlays() {
+    overlaysEl.innerHTML = "";
+    zooms = panels.map((p, pi) => {
+      const el = document.createElement("div");
+      el.style.left = p.x0 + "px"; el.style.width = p.w + "px";
+      overlaysEl.appendChild(el);
+      const z = d3.zoom().scaleExtent([0.4, 12])
+        .filter(ev => ev.type === "wheel" || (S.tool === "pan" && !ev.button))
+        .on("zoom", ev => {
+          S.t = ev.transform;
+          zooms.forEach((o, j) => { if (j !== pi) o.el.__zoom = ev.transform; });
+          hideTip(); draw();
+        });
+      d3.select(el).call(z);
+      el.__zoom = S.t;
+      el.addEventListener("pointerdown", ev => startLasso(ev, pi, el));
+      el.addEventListener("pointermove", ev => moveLasso(ev, pi));
+      el.addEventListener("pointerup", ev => endLasso(ev, pi));
+      el.addEventListener("pointerleave", hideTip);
+      el.addEventListener("click", ev => clickPanel(ev, pi));
+      return { el, z };
+    });
+  }
+
+  function setLevel(level) {
+    const p = panels[0], k = level === "clusters" ? 0.75 : 1;
+    const t = d3.zoomIdentity.translate((p.w / 2) * (1 - k), (H / 2) * (1 - k)).scale(k);
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const sel = d3.select(zooms[0].el);
+    (reduce ? sel : sel.transition().duration(450)).call(zooms[0].z.transform, t);
+  }
+  const level = () => (S.t.k < 0.85 ? "clusters" : "cells");
+
+  const local = (ev, el) => { const r = el.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
+
+  function startLasso(ev, pi, el) {
+    if (S.tool !== "lasso" || ev.button) return;
+    el.setPointerCapture(ev.pointerId);
+    S.lasso = { pi, pts: [local(ev, el)], add: ev.shiftKey };
+    hideTip();
+  }
+  function moveLasso(ev, pi) {
+    const el = zooms[pi].el, pt = local(ev, el);
+    if (S.lasso && S.lasso.pi === pi) { S.lasso.pts.push(pt); draw(); return; }
+    hover(pt, pi);
+  }
+  function endLasso(ev, pi) {
+    if (!S.lasso || S.lasso.pi !== pi) return;
+    const { pts, add } = S.lasso; S.lasso = null;
+    if (pts.length < 4) { draw(); return; }
+    const p = panels[pi], picked = [];
+    for (const i of p.ids) {
+      const [x, y] = S.t.apply([p.bx[i], p.by[i]]);
+      if (d3.polygonContains(pts, [x, y])) picked.push(i);
+    }
+    setSelection(picked, add, `Lassoed ${picked.length.toLocaleString()} cells.`);
+  }
+  function bubbleAt(pt, pi) {
+    const p = panels[pi];
+    for (const { b, x, y, r } of placeBubbles(p, S.t)) {
+      if ((pt[0] - x) ** 2 + (pt[1] - y) ** 2 <= r * r) return b;
+    }
+    return null;
+  }
+  function clickPanel(ev, pi) {
+    if (level() !== "clusters") return;
+    const b = bubbleAt(local(ev, zooms[pi].el), pi);
+    if (!b) return;
+    const p = panels[pi], picked = p.ids.filter(i => C.cluster[i] === b.k);
+    setSelection(picked, ev.shiftKey, `Selected the ${CL[b.k]} cluster${p.sp === null ? "" : " (" + SPECIES[p.sp].toLowerCase() + ")"}.`);
+  }
+
+  // ---------- tooltip ----------
+  const tip = document.getElementById("tip");
+  function hideTip() { tip.hidden = true; }
+  function hover(pt, pi) {
+    const p = panels[pi];
+    let html = null;
+    if (level() === "clusters") {
+      const b = bubbleAt(pt, pi);
+      if (b) html = `<b>${CL[b.k]}</b><br>${b.n.toLocaleString()} cells · mean score ${fmt(b.score)}<br>${Math.round(b.dis * 100)}% from diseased livers`;
+    } else {
+      const [bx, by] = S.t.invert(pt);
+      const i = p.qt.find(bx, by, 8 / S.t.k);
+      if (i !== undefined) html = `<b>${CL[C.cluster[i]]}</b> · cell ${i}<br>${SPECIES[C.species[i]]}, ${COND[C.condition[i]].toLowerCase()} · ${C.donor[i]}<br>disease score <span class="mono">${fmt(C.score[i])}</span>`;
+    }
+    if (!html) return hideTip();
+    tip.innerHTML = html; tip.hidden = false;
+    const x = Math.min(p.x0 + pt[0], W - 200);
+    tip.style.left = x + "px"; tip.style.top = pt[1] + "px";
+  }
+
+  // ---------- drawing ----------
+  const bubbleR = (b, p) => Math.sqrt(b.n / N) * p.unit * 0.24 * Math.min(1, S.t.k + 0.25);
+
+  // Screen positions of the cluster bubbles at zoom t, pushed apart so no two overlap
+  // (small bubbles move more than big ones; a weak pull keeps each near its own cells).
+  function placeBubbles(p, t) {
+    const B = p.stats.map(b => ({ b, ax: t.applyX(b.bx), ay: t.applyY(b.by), r: bubbleR(b, p) }));
+    B.forEach(o => { o.x = o.ax; o.y = o.ay; });
+    const gap = 6;
+    for (let it = 0; it < 200; it++) {
+      if (it) B.forEach(o => { o.x += (o.ax - o.x) * 0.02; o.y += (o.ay - o.y) * 0.02; });
+      let moved = false;
+      for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++) {
+        const a = B[i], c = B[j];
+        let dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy);
+        const need = a.r + c.r + gap;
+        if (d >= need) continue;
+        if (d < 1e-6) { dx = 1; dy = 0; d = 1; }
+        const push = need - d, wa = c.r / (a.r + c.r), wc = a.r / (a.r + c.r);
+        a.x -= dx / d * push * wa; a.y -= dy / d * push * wa;
+        c.x += dx / d * push * wc; c.y += dy / d * push * wc;
+        moved = true;
+      }
+      if (!moved && it) break;
+    }
+    return B;
+  }
+  function bubbleColor(b) {
+    switch (S.colorBy) {
+      case "score": return isNaN(b.score) ? T.muted : T.ramp(b.score);
+      case "type": return CAT[CL[b.k]];
+      case "species": return d3.interpolateRgb(T.mouse, T.human)(b.hum);
+      default: return d3.interpolateRgb(T.healthy, T.disease)(b.dis);
+    }
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = T.surface; ctx.fillRect(0, 0, W, H);
+    const lv = level(), t = S.t, focus = S.selected.size > 0 || S.results.length > 0;
+    panels.forEach((p, pi) => {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(p.x0, 0, p.w, H); ctx.clip();
+      ctx.translate(p.x0, 0);
+      if (lv === "clusters") drawClusters(p, t, focus); else drawCells(p, t, focus);
+      if (S.lasso && S.lasso.pi === pi) {
+        ctx.beginPath(); S.lasso.pts.forEach(([x, y], j) => (j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath(); ctx.fillStyle = T.sel + "22"; ctx.fill();
+        ctx.setLineDash([4, 3]); ctx.strokeStyle = T.sel; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (p.sp !== null) {
+        ctx.font = `600 13px ${css("--font-display")}`; ctx.fillStyle = p.sp ? T.human : T.mouse;
+        ctx.fillText(SPECIES[p.sp].toUpperCase(), 12, 22);
+      }
+      ctx.restore();
+    });
+    if (panels.length > 1) { ctx.strokeStyle = T.line; ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); }
+    document.getElementById("level-chip").textContent = `${lv} · zoom ${t.k.toFixed(1)}×`;
+    pressed("seg-level", lv);
+  }
+
+  function drawCells(p, t, focus) {
+    const r = Math.max(1.4, Math.min(5, 2.1 * Math.sqrt(t.k)));
+    const sel = [], res = [];
+    ctx.globalAlpha = focus ? 0.28 : 0.85;
+    // One path per colour: tens of thousands of separate fill() calls are too slow.
+    const many = p.ids.length > 20000, rr = many ? Math.max(1, r * 0.75) : r, buckets = new Map();
+    for (const i of p.ids) {
+      if (S.selected.has(i)) { sel.push(i); continue; }
+      if (S.rank.has(i)) { res.push(i); continue; }
+      const x = t.applyX(p.bx[i]), y = t.applyY(p.by[i]);
+      if (x < -5 || x > p.w + 5 || y < -5 || y > H + 5) continue;
+      const c = cellColor(i);
+      let b = buckets.get(c); if (!b) buckets.set(c, (b = []));
+      b.push(x, y);
+    }
+    for (const [c, b] of buckets) {
+      ctx.fillStyle = c; ctx.beginPath();
+      for (let k = 0; k < b.length; k += 2) {
+        if (many) ctx.rect(b[k] - rr, b[k + 1] - rr, 2 * rr, 2 * rr);
+        else { ctx.moveTo(b[k] + rr, b[k + 1]); ctx.arc(b[k], b[k + 1], rr, 0, 6.2832); }
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.6;
+    for (const i of res) {
+      const x = t.applyX(p.bx[i]), y = t.applyY(p.by[i]);
+      ctx.globalAlpha = 1 - 0.6 * (S.rank.get(i) / S.results.length);
+      ctx.fillStyle = cellColor(i); ctx.beginPath(); ctx.arc(x, y, r + 0.6, 0, 6.2832); ctx.fill();
+      ctx.strokeStyle = T.res; ctx.beginPath(); ctx.arc(x, y, r + 2.4, 0, 6.2832); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    for (const i of sel) {
+      const x = t.applyX(p.bx[i]), y = t.applyY(p.by[i]);
+      ctx.fillStyle = cellColor(i); ctx.beginPath(); ctx.arc(x, y, r + 1, 0, 6.2832); ctx.fill();
+      ctx.strokeStyle = T.sel; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+
+  function drawClusters(p, t, focus) {
+    // faint cells underneath for context
+    ctx.globalAlpha = 0.12; ctx.fillStyle = T.muted;
+    ctx.beginPath();
+    for (const i of p.ids) ctx.rect(t.applyX(p.bx[i]) - 0.6, t.applyY(p.by[i]) - 0.6, 1.2, 1.2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    const placed = placeBubbles(p, t);
+    const byK = new Map(placed.map(o => [o.b.k, o]));
+    ctx.strokeStyle = T.muted;
+    for (const l of D.clusterLinks) {
+      const a = byK.get(l.source), b = byK.get(l.target);
+      if (!a || !b) continue;
+      ctx.globalAlpha = 0.55; ctx.lineWidth = 1 + 9 * Math.sqrt(l.edges / maxLink);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    const hit = new Map();
+    S.selected.forEach(i => { if (p.sp === null || C.species[i] === p.sp) hit.set(C.cluster[i], "sel"); });
+    S.results.forEach(i => { if ((p.sp === null || C.species[i] === p.sp) && !hit.has(C.cluster[i])) hit.set(C.cluster[i], "res"); });
+    for (const { b, x, y, r } of placed) {
+      ctx.globalAlpha = focus && !hit.has(b.k) ? 0.45 : 1;
+      ctx.fillStyle = bubbleColor(b); ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
+      ctx.lineWidth = hit.has(b.k) ? 3 : 1; ctx.strokeStyle = hit.get(b.k) === "sel" ? T.sel : hit.get(b.k) === "res" ? T.res : T.surface; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    drawClusterLabels(placed, p);
+  }
+
+  // Labels go below, above, right or left of their bubble, whichever first clears every other
+  // bubble and every label already placed (big clusters first). If only the name fits, the cell
+  // count is dropped; if nothing fits, the label is skipped (the tooltip still names the bubble).
+  function drawClusterLabels(placed, p) {
+    const fName = `600 12px ${css("--font-display")}`, fSub = `10px ${css("--font-data")}`;
+    const boxes = [], pad = 2;
+    // the legend box overlays the bottom of the canvas, so labels must stay above it
+    const lg = document.getElementById("legend").getBoundingClientRect(), cv = canvas.getBoundingClientRect();
+    const yMax = lg.height ? Math.min(H, lg.top - cv.top - 4) : H;
+    const hitsCircle = (bx, o) => {
+      const cx = Math.max(bx.x0, Math.min(o.x, bx.x1)), cy = Math.max(bx.y0, Math.min(o.y, bx.y1));
+      return (o.x - cx) ** 2 + (o.y - cy) ** 2 < o.r * o.r;
+    };
+    const free = (bx, self) => bx.x0 >= 0 && bx.x1 <= p.w && bx.y0 >= 0 && bx.y1 <= yMax &&
+      !boxes.some(q => bx.x0 < q.x1 && bx.x1 > q.x0 && bx.y0 < q.y1 && bx.y1 > q.y0) &&
+      !placed.some(o => o !== self && hitsCircle(bx, o));
+    for (const o of [...placed].sort((a, c) => c.b.n - a.b.n)) {
+      const name = CL[o.b.k], sub = HAS_SCORE ? `${o.b.n} cells · ${fmt(o.b.score)}` : `${o.b.n} cells`;
+      ctx.font = fName; const wN = ctx.measureText(name).width;
+      ctx.font = fSub; const wS = ctx.measureText(sub).width;
+      let done = false;
+      for (const withSub of [true, false]) {
+        const w = Math.max(wN, withSub ? wS : 0) + 2 * pad, h = withSub ? 28 : 15;
+        const spots = [
+          [o.x - w / 2, o.y + o.r + 3], [o.x - w / 2, o.y - o.r - 3 - h],
+          [o.x + o.r + 4, o.y - h / 2], [o.x - o.r - 4 - w, o.y - h / 2],
+          // diagonals, for bubbles boxed in on all four sides
+          [o.x + o.r * 0.7 + 2, o.y + o.r * 0.7 + 2], [o.x - o.r * 0.7 - 2 - w, o.y + o.r * 0.7 + 2],
+          [o.x + o.r * 0.7 + 2, o.y - o.r * 0.7 - 2 - h], [o.x - o.r * 0.7 - 2 - w, o.y - o.r * 0.7 - 2 - h],
+          // last resort: inside the bubble itself, if it is wide enough
+          ...(w < 1.9 * o.r ? [[o.x - w / 2, o.y - h / 2]] : []),
+        ];
+        for (const [x0, y0] of spots) {
+          const bx = { x0, y0, x1: x0 + w, y1: y0 + h };
+          if (!free(bx, o)) continue;
+          boxes.push(bx);
+          const cx = x0 + w / 2;
+          ctx.textAlign = "center"; ctx.lineJoin = "round"; ctx.strokeStyle = T.surface; ctx.lineWidth = 4;
+          ctx.font = fName; ctx.strokeText(name, cx, y0 + 12); ctx.fillStyle = T.ink; ctx.fillText(name, cx, y0 + 12);
+          if (withSub) { ctx.font = fSub; ctx.strokeText(sub, cx, y0 + 25); ctx.fillStyle = T.muted; ctx.fillText(sub, cx, y0 + 25); }
+          done = true; break;
+        }
+        if (done) break;
+      }
+    }
+    ctx.textAlign = "start";
+  }
+
+  function legend() {
+    const el = document.getElementById("legend");
+    let main = "";
+    if (S.colorBy === "score") {
+      const stops = d3.range(0, 1.01, 0.1).map(v => T.ramp(v)).join(",");
+      main = `<div class="row"><span class="mono">0</span><span class="ramp" style="background:linear-gradient(90deg,${stops})"></span><span class="mono">1</span><span>disease score</span></div>`;
+    } else if (S.colorBy === "type") {
+      main = `<div class="row">${CL.map(c => `<span><span class="sw" style="background:${CAT[c]}"></span>${c}</span>`).join("")}</div>`;
+    } else if (S.colorBy === "species") {
+      main = `<div class="row"><span><span class="sw" style="background:var(--mouse)"></span>Mouse</span><span><span class="sw" style="background:var(--human)"></span>Human</span></div>`;
+    } else {
+      main = `<div class="row"><span><span class="sw" style="background:var(--healthy)"></span>Healthy liver</span><span><span class="sw" style="background:var(--disease)"></span>Diseased liver</span></div>`;
+    }
+    el.innerHTML = main + `<div class="row"><span><span class="sw" style="border:2px solid var(--sel)"></span>selected</span><span><span class="sw" style="border:2px solid var(--res)"></span>found</span></div>`;
+  }
+
+  // ---------- selection + search ----------
+  function setSelection(ids, add, msg) {
+    if (!add) S.selected = new Set();
+    ids.forEach(i => S.selected.add(i));
+    S.results = []; S.rank = new Map(); S.sim = null; S.searchMs = null;
+    status(msg + (S.selected.size ? " Press Find similar to search the graph." : ""));
+    updateAll();
+  }
+
+  // Random walk with restart: probability mass keeps returning to the selected cells,
+  // so cells reached by many short paths from the selection score highest.
+  function rwr(seeds, alpha = 0.15, iters = 30) {
+    const e = new Float64Array(N); seeds.forEach(i => (e[i] = 1 / seeds.length));
+    let p = Float64Array.from(e), q = new Float64Array(N);
+    for (let it = 0; it < iters; it++) {
+      q.fill(0);
+      for (let i = 0; i < N; i++) {
+        const v = p[i] / deg[i]; if (!v) continue;
+        for (let k = indptr[i]; k < indptr[i + 1]; k++) q[indices[k]] += v;
+      }
+      for (let i = 0; i < N; i++) q[i] = alpha * e[i] + (1 - alpha) * q[i];
+      [p, q] = [q, p];
+    }
+    return p;
+  }
+
+  function search() {
+    if (!S.selected.size) return;
+    const t0 = performance.now();
+    const p = rwr([...S.selected]);
+    const order = [];
+    for (let i = 0; i < N; i++) if (!S.selected.has(i) && p[i] > 0) order.push(i);
+    order.sort((a, b) => p[b] - p[a]);
+    S.results = order.slice(0, S.topK);
+    S.rank = new Map(S.results.map((id, r) => [id, r]));
+    S.sim = p; S.searchMs = performance.now() - t0;
+    const sp = d3.rollup(S.results, v => v.length, i => C.species[i]);
+    status(`Found the ${S.results.length} most similar cells in ${S.searchMs.toFixed(0)} ms: ${sp.get(0) || 0} mouse, ${sp.get(1) || 0} human.`);
+    updateAll();
+  }
+
+  function status(msg) { document.getElementById("status").textContent = msg; }
+
+  function composition(ids) {
+    const m = d3.rollup(ids, v => v.length, i => C.cluster[i]);
+    return [...m].sort((a, b) => b[1] - a[1]);
+  }
+  function compRow(label, ids) {
+    if (!ids.length) return `<div class="comp-row"><span>${label}</span><span class="status">none yet</span></div>`;
+    const comp = composition(ids), n = ids.length;
+    const bar = comp.map(([k, v]) => `<i style="width:${(100 * v) / n}%;background:${CAT[CL[k]]}" title="${CL[k]} ${v}"></i>`).join("");
+    const top = comp.slice(0, 2).map(([k, v]) => `${Math.round((100 * v) / n)}% ${CL[k]}`).join(", ");
+    const hum = ids.reduce((s, i) => s + C.species[i], 0), dis = ids.reduce((s, i) => s + C.condition[i], 0);
+    return `<div class="comp-row"><span>${label}</span><div class="stack">${bar}</div></div>
+      <div class="comp-row"><span></span><div class="comp-note">${top} · ${n - hum} mouse / ${hum} human · ${Math.round((100 * dis) / n)}% diseased</div></div>`;
+  }
+
+  // ---------- linked views ----------
+  function updateSelectionPanel() {
+    const n = S.selected.size;
+    document.getElementById("sel-count").innerHTML = `${n.toLocaleString()} <small>cells selected</small>`;
+    document.getElementById("comp").innerHTML = compRow("Selected", [...S.selected]) + compRow("Found", S.results);
+    document.getElementById("btn-search").disabled = !n;
+    document.getElementById("btn-refine").disabled = !S.results.length;
+    document.getElementById("btn-clear").disabled = !n && !S.results.length;
+  }
+
+  function histogram() {
+    if (!HAS_SCORE) {
+      d3.select("#hist").attr("height", 0).selectAll("*").remove();
+      document.getElementById("hist-note").textContent = "No disease scores in this data yet. They appear once the MELD step fills meld_score.";
+      return;
+    }
+    const svg = d3.select("#hist"), w = svg.node().getBoundingClientRect().width, h = 150, m = { t: 8, r: 8, b: 30, l: 34 };
+    svg.selectAll("*").remove();
+    const x = d3.scaleLinear().domain([0, 1]).range([m.l, w - m.r]);
+    const bin = d3.bin().domain([0, 1]).thresholds(d3.range(0.05, 1, 0.05));
+    const frac = ids => { const b = bin(ids.map(i => C.score[i])); const n = ids.length || 1; return b.map(d => ({ x0: d.x0, x1: d.x1, f: d.length / n })); };
+    const all = frac(d3.range(N)), sel = frac([...S.selected]), res = frac(S.results);
+    const ymax = d3.max([...all, ...(S.selected.size ? sel : []), ...(S.results.length ? res : [])], d => d.f) || 0.1;
+    const y = d3.scaleLinear().domain([0, ymax * 1.08]).nice().range([h - m.b, m.t]);
+    svg.append("g").selectAll("rect").data(all).join("rect")
+      .attr("x", d => x(d.x0) + 0.5).attr("width", d => Math.max(0, x(d.x1) - x(d.x0) - 1))
+      .attr("y", d => y(d.f)).attr("height", d => y(0) - y(d.f)).attr("fill", T.ramp0);
+    const step = (data, color, dash) => {
+      const pts = data.flatMap(d => [[d.x0, d.f], [d.x1, d.f]]);
+      svg.append("path").datum(pts).attr("fill", "none").attr("stroke", color).attr("stroke-width", 2).attr("stroke-dasharray", dash)
+        .attr("d", d3.line().x(d => x(d[0])).y(d => y(d[1])));
+    };
+    if (S.selected.size) step(sel, T.sel, null);
+    if (S.results.length) step(res, T.res, "5 3");
+    svg.append("g").attr("class", "axis").attr("transform", `translate(0,${h - m.b})`).call(d3.axisBottom(x).ticks(5).tickSizeOuter(0));
+    svg.append("g").attr("class", "axis").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(3).tickFormat(d3.format(".0%")).tickSizeOuter(0));
+    svg.append("text").attr("x", w - m.r).attr("y", h - 2).attr("text-anchor", "end").text("disease score (MELD likelihood)");
+    const med = ids => (ids.length ? fmt(d3.median(ids, i => C.score[i])) : "–");
+    document.getElementById("hist-note").textContent =
+      `Median score: all cells ${med(d3.range(N))}, selected ${med([...S.selected])}, found ${med(S.results)}.`;
+  }
+
+  // signaling sums per [condition][sender][receiver], averaged over species
+  const SIG = { healthy: [], disease: [] }, PAIRS = new Map();
+  for (const cond of ["healthy", "disease"]) SIG[cond] = CL.map(() => CL.map(() => 0));
+  const col = Object.fromEntries(D.signalingColumns.map((c, i) => [c, i]));
+  for (const row of D.signaling) {
+    const s = ci(row[col.sender]), r = ci(row[col.receiver]), cond = row[col.condition], v = row[col.score] / 2;
+    SIG[cond][s][r] += v;
+    const key = `${s}|${r}|${row[col.ligand]}–${row[col.receptor]}`;
+    const o = PAIRS.get(key) || { s, r, lr: `${row[col.ligand]}–${row[col.receptor]}`, healthy: 0, disease: 0 };
+    o[cond] += v; PAIRS.set(key, o);
+  }
+
+  function heatmap() {
+    const svg = d3.select("#heat"), w = svg.node().getBoundingClientRect().width, h = 250, m = { t: 6, r: 4, b: 44, l: 60 };
+    svg.selectAll("*").remove();
+    const PREF = ["Hepatocyte", "Cholangiocyte", "Endothelial", "Stellate", "Stellate/Fibroblast", "Kupffer cell", "Disease macrophage",
+                  "Kupffer/Macrophage", "Macrophage", "Monocyte", "Dendritic cell", "Neutrophil", "Granulocyte", "T cell", "T/NK cell", "B cell", "B/Plasma cell", "Other"];
+    const order = [...PREF.map(ci).filter(i => i >= 0), ...CL.map((_, i) => i).filter(i => !PREF.includes(CL[i]))];
+    const size = Math.min((w - m.l - m.r) / order.length, (h - m.t - m.b) / order.length);
+    const val = (s, r) => S.sigMode === "change" ? SIG.disease[s][r] - SIG.healthy[s][r] : SIG[S.sigMode][s][r];
+    const vmax = d3.max(order.flatMap(s => order.map(r => Math.abs(val(s, r)))));
+    const color = v => S.sigMode === "change" ? T.div(v / vmax) : T.ramp(v / vmax);
+    const involved = new Set([...S.selected, ...S.results].map(i => C.cluster[i]));
+    const focus = involved.size > 0;
+    const g = svg.append("g").attr("transform", `translate(${m.l},${m.t})`);
+    order.forEach((s, a) => order.forEach((r, b) => {
+      const on = !focus || involved.has(s) || involved.has(r);
+      const isPick = S.sigPair[0] === s && S.sigPair[1] === r;
+      g.append("rect").attr("x", b * size + 1).attr("y", a * size + 1).attr("width", size - 2).attr("height", size - 2).attr("rx", 2)
+        .attr("fill", color(val(s, r))).attr("opacity", on ? 1 : 0.25)
+        .attr("stroke", isPick ? T.ink : "none").attr("stroke-width", 2).style("cursor", "pointer")
+        .on("click", () => { S.sigPair = [s, r]; heatmap(); pairs(); })
+        .append("title").text(`${CL[s]} → ${CL[r]}: ${val(s, r).toFixed(2)}`);
+    }));
+    order.forEach((k, a) => {
+      const bold = involved.has(k);
+      g.append("text").attr("x", -6).attr("y", a * size + size / 2 + 3).attr("text-anchor", "end").text(SHORT[CL[k]])
+        .style("fill", bold ? T.ink : null).style("font-weight", bold ? 600 : null);
+      g.append("text").attr("transform", `translate(${a * size + size / 2 + 3},${order.length * size + 6}) rotate(-45)`).attr("text-anchor", "end").text(SHORT[CL[k]])
+        .style("fill", bold ? T.ink : null).style("font-weight", bold ? 600 : null);
+    });
+  }
+
+  function pairs() {
+    const [s, r] = S.sigPair;
+    const list = [...PAIRS.values()].filter(o => o.s === s && o.r === r).sort((a, b) => b.disease - b.healthy - (a.disease - a.healthy)).slice(0, 6);
+    const vmax = d3.max(list, o => Math.max(o.healthy, o.disease));
+    document.getElementById("pairs").innerHTML =
+      `<div class="status"><b style="color:var(--ink)">${CL[s]} → ${CL[r]}</b>, top signal pairs (ligand–receptor), healthy vs disease</div>` +
+      list.map(o => `<div class="pair"><span class="lr" title="${o.lr}">${o.lr}</span>
+        <span class="bars"><i style="width:${(100 * o.healthy) / vmax}%;background:var(--healthy)"></i><i style="width:${(100 * o.disease) / vmax}%;background:var(--disease)"></i></span>
+        <span class="num" style="text-align:right">${(o.disease - o.healthy >= 0 ? "+" : "") + (o.disease - o.healthy).toFixed(2)}</span></div>`).join("");
+  }
+
+  function resultsTable() {
+    const body = document.getElementById("res-body"), rows = S.results.slice(0, 25);
+    const smax = S.sim && rows.length ? S.sim[rows[0]] : 1;
+    body.innerHTML = rows.length ? rows.map((i, r) => `<tr>
+      <td class="num">${r + 1}</td><td class="num">${i}</td>
+      <td><span class="sw" style="background:${CAT[CL[C.cluster[i]]]}"></span>${CL[C.cluster[i]]}</td>
+      <td>${SPECIES[C.species[i]]}</td><td>${COND[C.condition[i]]}</td><td class="num">${C.donor[i]}</td>
+      <td class="num">${C.score[i] === null ? "–" : `<span class="minibar" style="width:${40 * C.score[i]}px;background:${T.ramp(C.score[i])}"></span>${C.score[i].toFixed(2)}`}</td>
+      <td class="num">${(S.sim[i] / smax).toFixed(2)}</td></tr>`).join("")
+      : `<tr><td colspan="8" class="status">Select cells on the map, then press Find similar.</td></tr>`;
+    document.getElementById("res-note").textContent = S.results.length ? `showing 25 of ${S.results.length}` : "";
+  }
+
+  function updateAll() { draw(); legend(); updateSelectionPanel(); histogram(); heatmap(); pairs(); resultsTable(); }
+
+  // ---------- controls ----------
+  function pressed(id, v) { document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute("aria-pressed", b.dataset.v === v)); }
+  function seg(id, fn) { document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener("click", () => { pressed(id, b.dataset.v); fn(b.dataset.v); })); }
+  seg("seg-color", v => { S.colorBy = v; draw(); legend(); });
+  seg("seg-layout", v => { S.layout = v; buildPanels(); draw(); });
+  seg("seg-level", v => setLevel(v));
+  seg("seg-tool", v => { S.tool = v; overlaysEl.classList.toggle("lasso", v === "lasso"); });
+  seg("seg-sig", v => { S.sigMode = v; heatmap(); });
+  document.getElementById("btn-search").addEventListener("click", search);
+  document.getElementById("btn-refine").addEventListener("click", () => {
+    S.results.forEach(i => S.selected.add(i)); search();
+  });
+  document.getElementById("btn-clear").addEventListener("click", () => setSelection([], false, "Selection cleared."));
+  const smin = document.getElementById("score-min");
+  smin.addEventListener("input", () => (document.getElementById("score-min-v").textContent = (+smin.value).toFixed(2)));
+  document.getElementById("btn-score").addEventListener("click", () => {
+    const th = +smin.value, ids = d3.range(N).filter(i => C.score[i] >= th);
+    setSelection(ids, false, `Selected ${ids.length.toLocaleString()} cells with score ≥ ${th.toFixed(2)}.`);
+  });
+
+  function resize() {
+    const r = wrap.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    W = r.width; H = r.height;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    buildPanels(); updateAll();
+  }
+  readTheme();
+  new ResizeObserver(() => resize()).observe(wrap);
+  const retheme = () => { readTheme(); updateAll(); };
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  // Open on a worked example: 25 mouse disease macrophages from diseased livers, already searched.
+  if (!HAS_SCORE) {
+    document.querySelector('#seg-color button[data-v="score"]').hidden = true;
+    document.querySelector(".filter").hidden = true;
+    pressed("seg-color", "type");
+  }
+  const demo = d3.range(N).filter(i => C.cluster[i] === DEMO && C.species[i] === 0 && C.condition[i] === 1).slice(0, 25);
+  resize();
+  S.selected = new Set(demo);
+  search();
+  status(document.getElementById("status").textContent + ` Example: 25 mouse ${CL[DEMO].toLowerCase()}s from diseased livers. Lasso your own cells to try it.`);
+})();
+</script>

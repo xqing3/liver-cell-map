@@ -1,0 +1,22 @@
+sample,loaded,after QC,after doublets
+cirrhotic1_cd45+,2380,2278,2275
+cirrhotic1_cd45-A,1686,1571,1570
+cirrhotic1_cd45-B,2046,1881,1869
+cirrhotic2_cd45+,3412,3327,3316
+cirrhotic2_cd45-,3673,3574,3546
+cirrhotic3_cd45+,1985,1900,1898
+cirrhotic3_cd45-,3602,3560,3501
+cirrhotic4_cd45+,4819,4807,4807
+cirrhotic5_cd45+,2922,2914,2912
+healthy1_cd45+,1863,1851,1847
+healthy1_cd45-A,1039,836,833
+healthy1_cd45-B,478,385,385
+healthy2_cd45+,6571,6569,6569
+healthy2_cd45-,4688,4682,4596
+healthy3_cd45+,3295,3284,3248
+healthy3_cd45-A,3230,3057,3012
+healthy3_cd45-B,1156,1081,1078
+healthy4_cd45+,4937,4923,4920
+healthy4_cd45-,3306,3298,3260
+healthy5_cd45+,5122,5101,5099
+total,62210,60879,60541

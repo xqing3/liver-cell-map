@@ -1,0 +1,16 @@
+# Data: large, and public on GEO / livercellatlas.org (see pipeline/00_download.ipynb)
+data/
+*.h5ad
+
+# Report drafts and reference papers (copyrighted PDFs)
+Document/
+Literatures/
+report_figures/
+
+# Local notes and tool output
+CLAUDE.md
+summary.md
+.playwright-mcp/
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store

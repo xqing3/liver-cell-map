@@ -1,0 +1,21 @@
+native,cell_type,n_cells
+B cells,B/Plasma cell,5676
+Basophils,Granulocyte,53
+Cholangiocytes,Cholangiocyte,4268
+Circulating NK/NKT,T/NK cell,4017
+Endothelial cells,Endothelial,18476
+Fibroblasts,Stellate/Fibroblast,2692
+Hepatocytes,Hepatocyte,727
+ILC1s,T/NK cell,388
+Kupffer cells,Kupffer/Macrophage,3852
+Macrophages,Kupffer/Macrophage,2930
+Mig. cDCs,Dendritic cell,109
+Mono+mono derived cells,Monocyte,6659
+Monocytes & Monocyte-derived cells,Monocyte,3999
+NK cells,T/NK cell,316
+Plasma cells,B/Plasma cell,901
+Resident NK,T/NK cell,7770
+T cells,T/NK cell,26868
+cDC1s,Dendritic cell,696
+cDC2s,Dendritic cell,1946
+pDCs,Dendritic cell,734

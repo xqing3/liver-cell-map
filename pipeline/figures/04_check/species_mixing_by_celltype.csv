@@ -1,0 +1,11 @@
+cell_type,human,mouse,n_cells
+B/Plasma cell,0.94,1.0,6577
+Cholangiocyte,1.0,1.0,4268
+Dendritic cell,0.74,0.66,3485
+Endothelial,0.03,0.01,18476
+Granulocyte,0.02,,53
+Hepatocyte,1.0,1.0,727
+Kupffer/Macrophage,0.07,0.12,6782
+Monocyte,0.26,0.03,10658
+Stellate/Fibroblast,0.21,0.98,2692
+T/NK cell,0.27,0.24,39359

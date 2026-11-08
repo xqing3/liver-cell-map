@@ -1,0 +1,5 @@
+species,condition,mean,count
+human,disease,0.138,5
+human,healthy,0.043,5
+mouse,disease,0.501,3
+mouse,healthy,0.046,3
