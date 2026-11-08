@@ -47,4 +47,12 @@ fake data.
 python3 src/export_for_web.py data/CSE6242_data/export/full prototype/data_full.json --graph-bin
 ```
 
+## Data
+
 Data files are not in this repository; all sources are public direct downloads.
+
+The team's copy of the raw downloads and the processed and exported data (`raw/`, `processed/*.h5ad`,
+`export/`) is in the shared Team 186 folder on Georgia Tech OneDrive (GT login required):
+[CSE6242_data](https://gtvault-my.sharepoint.com/:f:/r/personal/jzhu477_gatech_edu/Documents/CSE6242_26Fall_Team186/01.%20Project%20Data/CSE6242_data?d=wa53c6d26cc174656929cad18e5abe6d5&csf=1&web=1&e=nB38kH).
+Download it to `data/CSE6242_data/` at the repository root (or point `LCM_DATA_ROOT` at it) to skip
+`00_download` and the slower notebooks.
