@@ -167,6 +167,16 @@ td.num { font-family: var(--font-data); }
     <div class="ctl"><span>Species</span>
       <div class="seg" id="seg-layout">
         <button type="button" data-v="merged" aria-pressed="true">Merged</button>
+        <button type="button" data-v="mouse" aria-pressed="false">Mouse</button>
+        <button type="button" data-v="human" aria-pressed="false">Human</button>
+        <button type="button" data-v="side" aria-pressed="false">Side by side</button>
+      </div>
+    </div>
+    <div class="ctl"><span>Condition</span>
+      <div class="seg" id="seg-cond">
+        <button type="button" data-v="all" aria-pressed="true">All</button>
+        <button type="button" data-v="healthy" aria-pressed="false">Healthy</button>
+        <button type="button" data-v="disease" aria-pressed="false">Disease</button>
         <button type="button" data-v="side" aria-pressed="false">Side by side</button>
       </div>
     </div>
@@ -272,13 +282,19 @@ td.num { font-family: var(--font-data); }
   const SRC = { "#sample": "sample", "#real": "sample", "#synthetic": "fake", "#fake": "fake" }[location.hash] || "full";
   addEventListener("hashchange", () => location.reload());
   document.getElementById("src-" + SRC).setAttribute("aria-current", "true");
-  const D = await (await fetch({ full: "data_full.json", sample: "data_real.json", fake: "data.json" }[SRC])).json();
+  const FILE = { full: "data_full.json", sample: "data_real.json", fake: "data.json" }[SRC];
+  // The full data keeps its graph in <stem>_graph.txt (see src/export_for_web.py --graph-bin);
+  // start that download now instead of after the JSON arrives.
+  const GRAPH_GUESS = FILE.replace(/\.json$/, "_graph.txt");
+  const graphEarly = SRC === "full" ? fetch(GRAPH_GUESS) : null;
+  const D = await (await fetch(FILE)).json();
   const C = D.cells, N = C.x.length, CL = D.clusters;
   if (D.donors) C.donor = C.donor.map(k => D.donors[k]);
   let indptr, indices;
   if (D.graph.format === "upper-csr-u32-base64") {
     // Large graphs ship as the upper triangle, binary in base64 text; rebuild the symmetric adjacency here.
-    const b64 = atob((await (await fetch(D.graph.file)).text()).trim());
+    const res = graphEarly && D.graph.file === GRAPH_GUESS ? await graphEarly : await fetch(D.graph.file);
+    const b64 = atob((await res.text()).trim());
     const bytes = new Uint8Array(b64.length);
     for (let k = 0; k < b64.length; k++) bytes[k] = b64.charCodeAt(k);
     const buf = bytes.buffer;
@@ -302,7 +318,7 @@ td.num { font-family: var(--font-data); }
   const CAT_KNOWN = { "Hepatocyte": "#4e79a7", "Cholangiocyte": "#76b7b2", "Endothelial": "#59a14f", "Stellate": "#edc948",
                 "Stellate/Fibroblast": "#edc948", "Kupffer cell": "#f28e2b", "Disease macrophage": "#e15759", "Macrophage": "#e15759", "Kupffer/Macrophage": "#e15759", "Granulocyte": "#d37295",
                 "Monocyte": "#ff9da7", "T cell": "#b07aa1", "T/NK cell": "#b07aa1", "B cell": "#9c755f", "B/Plasma cell": "#9c755f",
-                "Dendritic cell": "#86bcb6", "Neutrophil": "#d37295", "Other": "#a0a4a8" };
+                "Dendritic cell": "#a0cbe8", "Neutrophil": "#d37295", "Other": "#a0a4a8" };
   const SHORT = Object.fromEntries(CL.map(c => [c, SHORT_KNOWN[c] || c.slice(0, 5)]));
   const CAT = Object.fromEntries(CL.map((c, i) => [c, CAT_KNOWN[c] || d3.schemeTableau10[i % 10]]));
   const HAS_SCORE = C.score.some(v => v !== null);
@@ -321,7 +337,7 @@ td.num { font-family: var(--font-data); }
   const SPECIES = ["Mouse", "Human"], COND = ["Healthy", "Disease"];
 
   const S = {
-    colorBy: HAS_SCORE ? "score" : "type", layout: "merged", tool: "lasso", t: d3.zoomIdentity,
+    colorBy: HAS_SCORE ? "score" : "type", layout: "merged", cond: "all", tool: "lasso", t: d3.zoomIdentity,
     selected: new Set(), results: [], sim: null, rank: new Map(), sigMode: "disease",
     sigPair: [DEMO, STEL], lasso: null, topK: 200, searchMs: null,
   };
@@ -351,10 +367,15 @@ td.num { font-family: var(--font-data); }
   const xExt = d3.extent(C.x), yExt = d3.extent(C.y);
   let W = 0, H = 0, panels = [];
 
-  function clusterStats(sp) {
+  // A panel shows one species (sp) and one condition (cd); null means all of them.
+  const inView = (sp, cd, i) => (sp === null || C.species[i] === sp) && (cd === null || C.condition[i] === cd);
+  const inPanel = (p, i) => inView(p.sp, p.cd, i);
+  const panelName = p => [p.sp === null ? null : SPECIES[p.sp], p.cd === null ? null : COND[p.cd]].filter(Boolean).join(" · ");
+
+  function clusterStats(sp, cd) {
     const st = CL.map(() => ({ n: 0, x: 0, y: 0, s: 0, dis: 0, hum: 0 }));
     for (let i = 0; i < N; i++) {
-      if (sp !== null && C.species[i] !== sp) continue;
+      if (!inView(sp, cd, i)) continue;
       const o = st[C.cluster[i]]; o.n++; o.x += C.x[i]; o.y += C.y[i]; o.s += C.score[i] ?? NaN; o.dis += C.condition[i]; o.hum += C.species[i];
     }
     // Anchor each bubble on the densest patch of its cells, not their mean: a cell type that forms
@@ -362,7 +383,7 @@ td.num { font-family: var(--font-data); }
     const G = 40, gx = v => Math.min(G - 1, Math.floor((v - xExt[0]) / (xExt[1] - xExt[0] + 1e-9) * G)),
       gy = v => Math.min(G - 1, Math.floor((v - yExt[0]) / (yExt[1] - yExt[0] + 1e-9) * G));
     const grid = CL.map(() => new Uint32Array(G * G));
-    for (let i = 0; i < N; i++) if (sp === null || C.species[i] === sp) grid[C.cluster[i]][gx(C.x[i]) * G + gy(C.y[i])]++;
+    for (let i = 0; i < N; i++) if (inView(sp, cd, i)) grid[C.cluster[i]][gx(C.x[i]) * G + gy(C.y[i])]++;
     const anchor = grid.map(g => {
       let best = -1, bi = 0;
       for (let a = 0; a < G; a++) for (let b = 0; b < G; b++) {
@@ -376,27 +397,40 @@ td.num { font-family: var(--font-data); }
     });
     const ax = CL.map(() => [0, 0, 0]);
     for (let i = 0; i < N; i++) {
-      if (sp !== null && C.species[i] !== sp) continue;
+      if (!inView(sp, cd, i)) continue;
       const k = C.cluster[i], [a, b] = anchor[k];
       if (Math.abs(gx(C.x[i]) - a) <= 1 && Math.abs(gy(C.y[i]) - b) <= 1) { ax[k][0] += C.x[i]; ax[k][1] += C.y[i]; ax[k][2]++; }
     }
     return st.map((o, k) => ({ k, n: o.n, x: ax[k][2] ? ax[k][0] / ax[k][2] : o.x / o.n, y: ax[k][2] ? ax[k][1] / ax[k][2] : o.y / o.n,
       score: o.s / o.n, dis: o.dis / o.n, hum: o.hum / o.n }));
   }
-  const statsCache = { null: clusterStats(null), 0: clusterStats(0), 1: clusterStats(1) };
+  const statsCache = new Map();
+  const statsFor = (sp, cd) => {
+    const key = `${sp}|${cd}`;
+    if (!statsCache.has(key)) statsCache.set(key, clusterStats(sp, cd));
+    return statsCache.get(key);
+  };
   const maxLink = d3.max(D.clusterLinks, l => l.edges);
 
+  // At most one of the two controls splits the map; the other filters every panel.
+  function panelDefs() {
+    const SP = { merged: null, mouse: 0, human: 1 }, CD = { all: null, healthy: 0, disease: 1 };
+    if (S.layout === "side") return [0, 1].map(sp => ({ sp, cd: CD[S.cond] }));
+    if (S.cond === "side") return [0, 1].map(cd => ({ sp: SP[S.layout], cd }));
+    return [{ sp: SP[S.layout], cd: CD[S.cond] }];
+  }
+
   function buildPanels() {
-    const defs = S.layout === "merged" ? [{ sp: null, x0: 0, w: W }] : [{ sp: 0, x0: 0, w: W / 2 }, { sp: 1, x0: W / 2, w: W / 2 }];
+    const list = panelDefs(), defs = list.map((p, j) => ({ ...p, x0: (j * W) / list.length, w: W / list.length }));
     panels = defs.map(p => {
       const pad = 28, dx = xExt[1] - xExt[0], dy = yExt[1] - yExt[0];
       const k = Math.min((p.w - 2 * pad) / dx, (H - 2 * pad - 20) / dy);
       const ox = (p.w - k * dx) / 2, oy = (H - k * dy) / 2 + 8;
       const sx = v => ox + (v - xExt[0]) * k, sy = v => oy + (yExt[1] - v) * k;
       const bx = new Float32Array(N), by = new Float32Array(N), ids = [];
-      for (let i = 0; i < N; i++) { bx[i] = sx(C.x[i]); by[i] = sy(C.y[i]); if (p.sp === null || C.species[i] === p.sp) ids.push(i); }
+      for (let i = 0; i < N; i++) { bx[i] = sx(C.x[i]); by[i] = sy(C.y[i]); if (inPanel(p, i)) ids.push(i); }
       const qt = d3.quadtree().x(i => bx[i]).y(i => by[i]).addAll(ids);
-      const stats = statsCache[p.sp].filter(o => o.n > 0).map(o => ({ ...o, bx: sx(o.x), by: sy(o.y) }));
+      const stats = statsFor(p.sp, p.cd).filter(o => o.n > 0).map(o => ({ ...o, bx: sx(o.x), by: sy(o.y) }));
       return { ...p, sx, sy, bx, by, ids, qt, stats, unit: Math.min(p.w, H) };
     });
     buildOverlays();
@@ -473,7 +507,8 @@ td.num { font-family: var(--font-data); }
     const b = bubbleAt(local(ev, zooms[pi].el), pi);
     if (!b) return;
     const p = panels[pi], picked = p.ids.filter(i => C.cluster[i] === b.k);
-    setSelection(picked, ev.shiftKey, `Selected the ${CL[b.k]} cluster${p.sp === null ? "" : " (" + SPECIES[p.sp].toLowerCase() + ")"}.`);
+    const where = panelName(p).toLowerCase();
+    setSelection(picked, ev.shiftKey, `Selected the ${CL[b.k]} cluster${where ? " (" + where + ")" : ""}.`);
   }
 
   // ---------- tooltip ----------
@@ -547,9 +582,10 @@ td.num { font-family: var(--font-data); }
         ctx.closePath(); ctx.fillStyle = T.sel + "22"; ctx.fill();
         ctx.setLineDash([4, 3]); ctx.strokeStyle = T.sel; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
       }
-      if (p.sp !== null) {
-        ctx.font = `600 13px ${css("--font-display")}`; ctx.fillStyle = p.sp ? T.human : T.mouse;
-        ctx.fillText(SPECIES[p.sp].toUpperCase(), 12, 22);
+      if (p.sp !== null || p.cd !== null) {
+        ctx.font = `600 13px ${css("--font-display")}`;
+        ctx.fillStyle = p.sp !== null ? (p.sp ? T.human : T.mouse) : (p.cd ? T.disease : T.healthy);
+        ctx.fillText(panelName(p).toUpperCase(), 12, 22);
       }
       ctx.restore();
     });
@@ -615,8 +651,8 @@ td.num { font-family: var(--font-data); }
     }
     ctx.globalAlpha = 1;
     const hit = new Map();
-    S.selected.forEach(i => { if (p.sp === null || C.species[i] === p.sp) hit.set(C.cluster[i], "sel"); });
-    S.results.forEach(i => { if ((p.sp === null || C.species[i] === p.sp) && !hit.has(C.cluster[i])) hit.set(C.cluster[i], "res"); });
+    S.selected.forEach(i => { if (inPanel(p, i)) hit.set(C.cluster[i], "sel"); });
+    S.results.forEach(i => { if (inPanel(p, i) && !hit.has(C.cluster[i])) hit.set(C.cluster[i], "res"); });
     for (const { b, x, y, r } of placed) {
       ctx.globalAlpha = focus && !hit.has(b.k) ? 0.45 : 1;
       ctx.fillStyle = bubbleColor(b); ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
@@ -862,7 +898,16 @@ td.num { font-family: var(--font-data); }
   function pressed(id, v) { document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute("aria-pressed", b.dataset.v === v)); }
   function seg(id, fn) { document.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener("click", () => { pressed(id, b.dataset.v); fn(b.dataset.v); })); }
   seg("seg-color", v => { S.colorBy = v; draw(); legend(); });
-  seg("seg-layout", v => { S.layout = v; buildPanels(); draw(); });
+  seg("seg-layout", v => {
+    S.layout = v;
+    if (v === "side" && S.cond === "side") { S.cond = "all"; pressed("seg-cond", "all"); }
+    buildPanels(); draw();
+  });
+  seg("seg-cond", v => {
+    S.cond = v;
+    if (v === "side" && S.layout === "side") { S.layout = "merged"; pressed("seg-layout", "merged"); }
+    buildPanels(); draw();
+  });
   seg("seg-level", v => setLevel(v));
   seg("seg-tool", v => { S.tool = v; overlaysEl.classList.toggle("lasso", v === "lasso"); });
   seg("seg-sig", v => { S.sigMode = v; heatmap(); });

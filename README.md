@@ -28,11 +28,16 @@ CSE6242 Data and Visual Analytics, Fall 2026, Team 186: Crystal Xin Qing, Ying L
 
 ```bash
 cd prototype
-python3 -m http.server 8000
+python3 serve.py 8000
 ```
 
 Open `http://localhost:8000/` for all real cells, `#sample` for the 5,000-cell sample, or `#synthetic` for
-fake data.
+fake data. `serve.py` is the standard library server with gzip added, which cuts the full data from 9.6 MB
+to 4.0 MB on the wire (about 4.6 s to 2.0 s to load on a 20 Mbps link). `python3 -m http.server 8000`
+still works, uncompressed.
+
+The toolbar filters or splits the map by species (merged, mouse, human, side by side) and by condition
+(all, healthy, disease, side by side). Only one of the two can be side by side at a time.
 
 ## Rebuild the data
 
